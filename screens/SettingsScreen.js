@@ -5,51 +5,28 @@ import { LineChart, Grid, XAxis, YAxis } from 'react-native-svg-charts'
 
 import DateTimePicker from "react-native-modal-datetime-picker";
 import * as shape from 'd3-shape'
+import RNPickerSelect from 'react-native-picker-select';
 
 import Axios from 'axios';
+
+let interval
 
 export default function SettingsScreen() {
 
 
-  const contentInset = { top: 20, bottom: 8 }
+  const [data, setData] = useState([4, 3, 1])
 
-  const [state, setState] = useState({
-    labels: [],
-    data: [1, 2, 3, 4],
-    isDateTimePickerVisible: false,
-    sensors: [
-      {
-        sensorId: 1,
-        arduino_id: 1,
-        name: 'GP2Y10',
-        arduino: 'arduino_1'
-      },
-      {
-        sensorId: 2,
-        arduino_id: 1,
-        name: 'DHT11_T',
-        arduino: 'arduino_1'
-      },
-      {
-        sensorId: 3,
-        arduino_id: 1,
-        name: 'DHT11_H',
-        arduino: 'arduino_1'
-      }
-    ]
-  })
+  const sensors = [
+    {name: 'GP2Y10', id: 1, arduinoId: 1},
+    {name: 'DHT11_T', id: 2, arduinoId: 1},
+    {name: 'DHT11_H', id: 2, arduinoId: 1}
+  ]
 
-  const [selected, setSelected] = useState({
-    data: {
-      sensorId: 3,
-      arduino_id: 1,
-      name: 'DHT11_H',
-      arduino: 'arduino_1'
-    }
-  })
+  const [selected, setSelected] = useState('GP2Y10')
 
+  const [netID, setNetID] = useState()
 
-  const Gradient = () => (
+  const Gradient = (selected) => (
     <Defs key={'gradient'}>
       <LinearGradient id={'gradient'} x1={'0'} y={'0%'} x2={'100%'} y2={'0%'}>
         <Stop offset={'0%'} stopColor={'rgb(134, 65, 244)'} />
@@ -58,58 +35,40 @@ export default function SettingsScreen() {
     </Defs>
   )
 
-  function handleOnChange(itemValue) {
-    if (interval) clearInterval(interval);
-    setSelected({
-      data: itemValue
-    })
-    interval = setInterval(getInflux, 5000);
-  }
-
-  function getInflux() {
+  const getData = () => {
     Axios({
+      method: 'post',
       url: 'https://us-west-2-1.aws.cloud2.influxdata.com/api/v2/query?org=theten12@gmail.com&pretty=true',
-      method: 'POST',
       headers: {
-        'Content-Type': 'application/vnd.flux',
         'Authorization': 'Token ak5mrOgELZ6XR7yQyF0Hc6BrGszJ3JciaUwBJJnkFlMK76ZTdMKNIxOKdH_fBOl25qZ5huoxeozKjuh_-xIzOg==',
-        'Accept-Encoding': 'identity'
+        'Content-Type': 'application/vnd.flux'
       },
-      data: "from(bucket: \"my-bucket\")|> range(start: -5m)|> filter(fn: (r) => r._measurement == \"arduino_1\")|> filter(fn: (r) => r._field == \"value\")|> filter(fn: (r) => r.sensor == \"" + selected.data.name + "\")",
+      data: `from(bucket: "my-bucket")|> range(start: -30s)|> filter(fn: (r) => r._measurement == "arduino_1")|> filter(fn: (r) => r._field == "value")|> filter(fn: (r) => r.sensor == "${selected}")`
     })
-      .then(res => {
-        let sensors = parser(res.data)
-
-        let new_data = sensors[0].map(u => parseFloat(u._value))
-
+      .then(response => parser(response.data)[0].map(u => +u._value))
+      .then(new_data => {
         console.log(new_data);
         
-
-        setState({
-          ...state,
-          data: new_data
-        })
+        setData(new_data)
       })
   }
 
-  let interval
 
   useEffect(() => {
-    interval = setInterval(getInflux, 5000);
-    return () => clearInterval(interval)
-
   }, [])
 
 
   return (
 
     <ScrollView style={styles.container}>
+      
+
       {/* Đồ thị */}
-      <View style={{ flexDirection: 'row', padding: 10 }}>
+      <View style={{ flexDirection: 'row', padding: 10, paddingTop: 20, paddingBottom: 20 }}>
         <YAxis
-          data={state.data}
+          data={data}
           style={{ paddingBottom: 10 }}
-          contentInset={contentInset}
+          contentInset={{ top: 20, bottom: 8 }}
           svg={{
             fill: 'grey',
             fontSize: 10,
@@ -117,9 +76,9 @@ export default function SettingsScreen() {
           numberOfTicks={10}
           formatLabel={(value) => `${value}`}
         />
-        <View style={{ height: 200, flexDirection: 'column', flex: 1 }}>
+        <View style={{ height: 400, flexDirection: 'column', flex: 1 }}>
           <LineChart
-            data={state.data}
+            data={data}
             style={{ flex: 1, marginLeft: 8 }}
             contentInset={{ top: 20, bottom: 20 }}
             svg={{
@@ -131,33 +90,20 @@ export default function SettingsScreen() {
             <Grid />
             <Gradient />
           </LineChart>
-          {/* <XAxis
-            style={{ marginHorizontal: 0 }}
-            data={state.data}
-            formatLabel={(value, index) => state.labels[index]}
-            contentInset={{ left: 10, right: 10 }}
-            svg={{ fontSize: 10, fill: 'black' }}
-          /> */}
         </View>
-
       </View>
       {/* End Đồ Thị */}
-      <Picker
-        selectedValue={selected.data}
-        onValueChange={handleOnChange}
-      >
-        {
-          state.sensors && state.sensors.map(u => (
-            <Picker.Item key={u.name} label={u.name} value={u} />
-          ))
-        }
-      </Picker>
+      <View style={styles.inputAndroid}>
+      <RNPickerSelect
+        onValueChange={(value) => {
+          setSelected(value.name)
+        }}
+        items={sensors.map(u => ({ label: u.name, value: u }))}
+      />
 
-      <Button title="off" onPress={() => {
-        console.log(interval);
-        
-        clearInterval(interval)
-      }}/>
+      <Button title='xac nhan' onPress={() => getData(selected)} />
+      </View>
+      <Text style={{textAlign: 'center'}}> Chọn một cảm biến xem chỉ số đã thay đổi trong 30s</Text>
 
     </ScrollView>
   )
@@ -172,6 +118,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
+  inputAndroid: {
+    marginLeft: 40,
+    marginRight: 40,
+    marginBottom: 20,
+    fontSize: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 0.5,
+    borderColor: 'blue',
+    borderRadius: 8,
+    color: 'black'
+  }
 });
 
 function parser(plain) {
